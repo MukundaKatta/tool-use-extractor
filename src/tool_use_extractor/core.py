@@ -7,6 +7,7 @@ tool_calls arrays. Works with raw dicts — no SDK dependency.
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -93,11 +94,12 @@ def extract_tool_uses(content: Any) -> list[ToolUse]:
         # OpenAI-style tool_calls list embedded in content
         elif block_type == "function" or "function" in block:
             fn = block.get("function", {})
-            import json as _json
             raw_args = fn.get("arguments", "{}")
             try:
-                args = _json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-            except Exception:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            except (ValueError, TypeError):
+                args = {}
+            if not isinstance(args, dict):
                 args = {}
             results.append(ToolUse(
                 id=block.get("id", ""),
@@ -111,16 +113,19 @@ def extract_tool_uses(content: Any) -> list[ToolUse]:
 
 def _extract_openai(tool_calls: list[Any]) -> list[ToolUse]:
     """Extract from OpenAI tool_calls array."""
-    import json as _json
     results: list[ToolUse] = []
     for tc in tool_calls:
         if not isinstance(tc, dict):
             continue
         fn = tc.get("function", {})
+        if not isinstance(fn, dict):
+            fn = {}
         raw_args = fn.get("arguments", "{}")
         try:
-            args = _json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-        except Exception:
+            args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+        except (ValueError, TypeError):
+            args = {}
+        if not isinstance(args, dict):
             args = {}
         results.append(ToolUse(
             id=tc.get("id", ""),
