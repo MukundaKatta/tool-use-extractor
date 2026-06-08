@@ -1,17 +1,23 @@
-"""Tests for tool-use-extractor."""
+"""Tests for tool-use-extractor.
 
-import sys
+Uses the Python standard-library ``unittest`` framework only (no third-party
+dependencies). Run with::
+
+    python3 -m unittest discover -s tests
+"""
+
 import os
-import json
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
+import sys
+import unittest
 
-import pytest
-from tool_use_extractor import (
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from tool_use_extractor import (  # noqa: E402
     ToolUse,
     ToolUseExtractorError,
-    extract_tool_uses,
     extract_from_message,
     extract_text,
+    extract_tool_uses,
 )
 
 
@@ -59,185 +65,291 @@ ANTHROPIC_MESSAGE = {
 # extract_tool_uses — Anthropic content list
 # ---------------------------------------------------------------------------
 
-def test_extract_anthropic_basic():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert len(tools) == 1
-    assert tools[0].name == "web_search"
-    assert tools[0].id == "toolu_abc123"
-    assert tools[0].input == {"q": "Python history"}
+class TestExtractAnthropicContent(unittest.TestCase):
+    def test_extract_anthropic_basic(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0].name, "web_search")
+        self.assertEqual(tools[0].id, "toolu_abc123")
+        self.assertEqual(tools[0].input, {"q": "Python history"})
 
-def test_extract_returns_tooluse():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert isinstance(tools[0], ToolUse)
+    def test_extract_returns_tooluse(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertIsInstance(tools[0], ToolUse)
 
-def test_extract_multiple():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT_MULTI)
-    assert len(tools) == 2
-    assert tools[0].name == "search"
-    assert tools[1].name == "read_file"
+    def test_extract_multiple(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT_MULTI)
+        self.assertEqual(len(tools), 2)
+        self.assertEqual(tools[0].name, "search")
+        self.assertEqual(tools[1].name, "read_file")
 
-def test_extract_order_preserved():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT_MULTI)
-    assert tools[0].id == "call_1"
-    assert tools[1].id == "call_2"
+    def test_extract_order_preserved(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT_MULTI)
+        self.assertEqual(tools[0].id, "call_1")
+        self.assertEqual(tools[1].id, "call_2")
 
-def test_extract_no_tools():
-    content = [{"type": "text", "text": "No tools here."}]
-    assert extract_tool_uses(content) == []
+    def test_extract_no_tools(self):
+        content = [{"type": "text", "text": "No tools here."}]
+        self.assertEqual(extract_tool_uses(content), [])
 
-def test_extract_empty_list():
-    assert extract_tool_uses([]) == []
+    def test_extract_empty_list(self):
+        self.assertEqual(extract_tool_uses([]), [])
 
-def test_extract_none():
-    assert extract_tool_uses(None) == []
+    def test_extract_none(self):
+        self.assertEqual(extract_tool_uses(None), [])
 
-def test_extract_plain_string():
-    assert extract_tool_uses("just text") == []
+    def test_extract_plain_string(self):
+        self.assertEqual(extract_tool_uses("just text"), [])
 
-def test_extract_input_deep_copy():
-    content = [{"type": "tool_use", "id": "x", "name": "t", "input": {"a": 1}}]
-    tools = extract_tool_uses(content)
-    tools[0].input["a"] = 99
-    # Original content unchanged
-    assert content[0]["input"]["a"] == 1
+    def test_extract_input_deep_copy(self):
+        content = [{"type": "tool_use", "id": "x", "name": "t", "input": {"a": 1}}]
+        tools = extract_tool_uses(content)
+        tools[0].input["a"] = 99
+        # Original content unchanged
+        self.assertEqual(content[0]["input"]["a"], 1)
+
+    def test_extract_raw_is_deep_copy(self):
+        content = [{"type": "tool_use", "id": "x", "name": "t", "input": {"a": 1}}]
+        tools = extract_tool_uses(content)
+        tools[0].raw["input"]["a"] = 99
+        self.assertEqual(content[0]["input"]["a"], 1)
+
+    def test_extract_skips_non_dict_blocks(self):
+        content = [
+            "not a dict",
+            42,
+            {"type": "tool_use", "id": "x", "name": "t", "input": {}},
+        ]
+        tools = extract_tool_uses(content)
+        self.assertEqual(len(tools), 1)
+
+    def test_extract_input_not_a_dict_defaults_empty(self):
+        content = [{"type": "tool_use", "id": "x", "name": "t", "input": "oops"}]
+        tools = extract_tool_uses(content)
+        self.assertEqual(tools[0].input, {})
+
+    def test_extract_unknown_block_type_ignored(self):
+        content = [{"type": "image", "source": {}}]
+        self.assertEqual(extract_tool_uses(content), [])
 
 
 # ---------------------------------------------------------------------------
 # extract_tool_uses — Anthropic message dict
 # ---------------------------------------------------------------------------
 
-def test_extract_from_anthropic_message():
-    tools = extract_tool_uses(ANTHROPIC_MESSAGE)
-    assert len(tools) == 1
-    assert tools[0].name == "web_search"
+class TestExtractAnthropicMessage(unittest.TestCase):
+    def test_extract_from_anthropic_message(self):
+        tools = extract_tool_uses(ANTHROPIC_MESSAGE)
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0].name, "web_search")
 
-def test_extract_from_message_dict_no_content():
-    msg = {"role": "user"}
-    assert extract_tool_uses(msg) == []
+    def test_extract_from_message_dict_no_content(self):
+        msg = {"role": "user"}
+        self.assertEqual(extract_tool_uses(msg), [])
+
+    def test_extract_empty_dict(self):
+        self.assertEqual(extract_tool_uses({}), [])
 
 
 # ---------------------------------------------------------------------------
 # extract_tool_uses — OpenAI format
 # ---------------------------------------------------------------------------
 
-def test_extract_openai():
-    tools = extract_tool_uses(OPENAI_MESSAGE)
-    assert len(tools) == 1
-    assert tools[0].name == "get_weather"
-    assert tools[0].id == "call_openai_001"
-    assert tools[0].input == {"city": "Paris", "unit": "celsius"}
+class TestExtractOpenAI(unittest.TestCase):
+    def test_extract_openai(self):
+        tools = extract_tool_uses(OPENAI_MESSAGE)
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0].name, "get_weather")
+        self.assertEqual(tools[0].id, "call_openai_001")
+        self.assertEqual(tools[0].input, {"city": "Paris", "unit": "celsius"})
 
-def test_extract_openai_parses_json_args():
-    msg = {
-        "tool_calls": [
+    def test_extract_openai_parses_json_args(self):
+        msg = {
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "function": {"name": "fn", "arguments": '{"x": 42}'},
+                }
+            ]
+        }
+        tools = extract_tool_uses(msg)
+        self.assertEqual(tools[0].input["x"], 42)
+
+    def test_extract_openai_invalid_json_args(self):
+        msg = {
+            "tool_calls": [
+                {"id": "c1", "function": {"name": "fn", "arguments": "not json"}},
+            ]
+        }
+        tools = extract_tool_uses(msg)
+        self.assertEqual(tools[0].input, {})
+
+    def test_extract_openai_dict_args_passthrough(self):
+        # Some SDKs hand back already-parsed dict arguments.
+        msg = {
+            "tool_calls": [
+                {"id": "c1", "function": {"name": "fn", "arguments": {"x": 7}}},
+            ]
+        }
+        tools = extract_tool_uses(msg)
+        self.assertEqual(tools[0].input, {"x": 7})
+
+    def test_extract_openai_non_dict_json_args_defaults_empty(self):
+        # A JSON array is valid JSON but not a valid argument object.
+        msg = {
+            "tool_calls": [
+                {"id": "c1", "function": {"name": "fn", "arguments": "[1, 2, 3]"}},
+            ]
+        }
+        tools = extract_tool_uses(msg)
+        self.assertEqual(tools[0].input, {})
+
+    def test_extract_openai_multiple_tool_calls(self):
+        msg = {
+            "tool_calls": [
+                {"id": "a", "function": {"name": "f1", "arguments": "{}"}},
+                {"id": "b", "function": {"name": "f2", "arguments": "{}"}},
+            ]
+        }
+        tools = extract_tool_uses(msg)
+        self.assertEqual([t.name for t in tools], ["f1", "f2"])
+
+    def test_extract_openai_function_block_in_content_list(self):
+        # OpenAI-style function blocks embedded directly in a content list.
+        content = [
             {
-                "id": "c1",
-                "function": {"name": "fn", "arguments": '{"x": 42}'},
+                "id": "call_x",
+                "type": "function",
+                "function": {"name": "lookup", "arguments": '{"key": "v"}'},
             }
         ]
-    }
-    tools = extract_tool_uses(msg)
-    assert tools[0].input["x"] == 42
+        tools = extract_tool_uses(content)
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0].name, "lookup")
+        self.assertEqual(tools[0].input, {"key": "v"})
 
-def test_extract_openai_invalid_json_args():
-    msg = {
-        "tool_calls": [
-            {"id": "c1", "function": {"name": "fn", "arguments": "not json"}},
-        ]
-    }
-    tools = extract_tool_uses(msg)
-    assert tools[0].input == {}
+    def test_extract_openai_skips_non_dict_tool_calls(self):
+        msg = {"tool_calls": ["bad", None, {"id": "ok", "function": {"name": "n"}}]}
+        tools = extract_tool_uses(msg)
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0].name, "n")
 
 
 # ---------------------------------------------------------------------------
-# ToolUse attributes
+# ToolUse attributes / helpers
 # ---------------------------------------------------------------------------
 
-def test_tooluse_id():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert tools[0].id == "toolu_abc123"
+class TestToolUse(unittest.TestCase):
+    def test_tooluse_id(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertEqual(tools[0].id, "toolu_abc123")
 
-def test_tooluse_name():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert tools[0].name == "web_search"
+    def test_tooluse_name(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertEqual(tools[0].name, "web_search")
 
-def test_tooluse_input():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert tools[0].input["q"] == "Python history"
+    def test_tooluse_input(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertEqual(tools[0].input["q"], "Python history")
 
-def test_tooluse_get():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert tools[0].get("q") == "Python history"
-    assert tools[0].get("missing", "default") == "default"
+    def test_tooluse_get(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertEqual(tools[0].get("q"), "Python history")
+        self.assertEqual(tools[0].get("missing", "default"), "default")
 
-def test_tooluse_contains():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert "q" in tools[0]
-    assert "missing" not in tools[0]
+    def test_tooluse_get_missing_returns_none(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertIsNone(tools[0].get("missing"))
 
-def test_tooluse_raw():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    assert tools[0].raw["type"] == "tool_use"
+    def test_tooluse_contains(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertIn("q", tools[0])
+        self.assertNotIn("missing", tools[0])
 
-def test_tooluse_repr():
-    tools = extract_tool_uses(ANTHROPIC_CONTENT)
-    r = repr(tools[0])
-    assert "web_search" in r
+    def test_tooluse_raw(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        self.assertEqual(tools[0].raw["type"], "tool_use")
 
-def test_tooluse_missing_input_defaults_to_empty():
-    content = [{"type": "tool_use", "id": "x", "name": "ping"}]
-    tools = extract_tool_uses(content)
-    assert tools[0].input == {}
+    def test_tooluse_repr(self):
+        tools = extract_tool_uses(ANTHROPIC_CONTENT)
+        r = repr(tools[0])
+        self.assertIn("web_search", r)
+
+    def test_tooluse_missing_input_defaults_to_empty(self):
+        content = [{"type": "tool_use", "id": "x", "name": "ping"}]
+        tools = extract_tool_uses(content)
+        self.assertEqual(tools[0].input, {})
+
+    def test_error_type_is_exception_subclass(self):
+        self.assertTrue(issubclass(ToolUseExtractorError, Exception))
 
 
 # ---------------------------------------------------------------------------
 # extract_from_message
 # ---------------------------------------------------------------------------
 
-def test_extract_from_message_anthropic():
-    tools = extract_from_message(ANTHROPIC_MESSAGE)
-    assert len(tools) == 1
+class TestExtractFromMessage(unittest.TestCase):
+    def test_extract_from_message_anthropic(self):
+        tools = extract_from_message(ANTHROPIC_MESSAGE)
+        self.assertEqual(len(tools), 1)
 
-def test_extract_from_message_openai():
-    tools = extract_from_message(OPENAI_MESSAGE)
-    assert len(tools) == 1
+    def test_extract_from_message_openai(self):
+        tools = extract_from_message(OPENAI_MESSAGE)
+        self.assertEqual(len(tools), 1)
 
 
 # ---------------------------------------------------------------------------
 # extract_text
 # ---------------------------------------------------------------------------
 
-def test_extract_text_plain_string():
-    assert extract_text("hello") == "hello"
+class TestExtractText(unittest.TestCase):
+    def test_extract_text_plain_string(self):
+        self.assertEqual(extract_text("hello"), "hello")
 
-def test_extract_text_from_blocks():
-    content = [
-        {"type": "text", "text": "First."},
-        {"type": "tool_use", "id": "x", "name": "t", "input": {}},
-        {"type": "text", "text": "Second."},
-    ]
-    text = extract_text(content)
-    assert "First." in text
-    assert "Second." in text
+    def test_extract_text_from_blocks(self):
+        content = [
+            {"type": "text", "text": "First."},
+            {"type": "tool_use", "id": "x", "name": "t", "input": {}},
+            {"type": "text", "text": "Second."},
+        ]
+        text = extract_text(content)
+        self.assertIn("First.", text)
+        self.assertIn("Second.", text)
 
-def test_extract_text_from_message():
-    msg = {"role": "assistant", "content": [{"type": "text", "text": "hi"}]}
-    assert extract_text(msg) == "hi"
+    def test_extract_text_from_message(self):
+        msg = {"role": "assistant", "content": [{"type": "text", "text": "hi"}]}
+        self.assertEqual(extract_text(msg), "hi")
 
-def test_extract_text_none():
-    assert extract_text(None) == ""
+    def test_extract_text_none(self):
+        self.assertEqual(extract_text(None), "")
 
-def test_extract_text_empty_list():
-    assert extract_text([]) == ""
+    def test_extract_text_empty_list(self):
+        self.assertEqual(extract_text([]), "")
 
-def test_extract_text_no_text_blocks():
-    content = [{"type": "tool_use", "id": "x", "name": "t", "input": {}}]
-    assert extract_text(content) == ""
+    def test_extract_text_no_text_blocks(self):
+        content = [{"type": "tool_use", "id": "x", "name": "t", "input": {}}]
+        self.assertEqual(extract_text(content), "")
 
-def test_extract_text_joins_with_newline():
-    content = [
-        {"type": "text", "text": "Line 1"},
-        {"type": "text", "text": "Line 2"},
-    ]
-    result = extract_text(content)
-    assert result == "Line 1\nLine 2"
+    def test_extract_text_joins_with_newline(self):
+        content = [
+            {"type": "text", "text": "Line 1"},
+            {"type": "text", "text": "Line 2"},
+        ]
+        result = extract_text(content)
+        self.assertEqual(result, "Line 1\nLine 2")
+
+    def test_extract_text_skips_empty_text(self):
+        content = [
+            {"type": "text", "text": ""},
+            {"type": "text", "text": "kept"},
+        ]
+        self.assertEqual(extract_text(content), "kept")
+
+    def test_extract_text_string_message_content(self):
+        # Some providers put a plain string in the content field.
+        msg = {"role": "assistant", "content": "plain"}
+        self.assertEqual(extract_text(msg), "plain")
+
+
+if __name__ == "__main__":
+    unittest.main()
